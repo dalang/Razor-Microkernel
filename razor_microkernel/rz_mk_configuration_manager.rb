@@ -14,7 +14,7 @@ module RazorMicrokernel
     MK_CONF_FILE = '/tmp/mk_conf.yaml'
     DEF_MK_GEM_MIRROR_URI = "http://localhost:2158/gem-mirror"
     DEF_MK_GEMLIST_URI = "http://localhost:2158/gem-mirror"
-    
+
     attr_reader :mk_checkin_interval
     attr_reader :mk_checkin_skew
     attr_reader :mk_uri
@@ -31,6 +31,7 @@ module RazorMicrokernel
     attr_reader :mk_kmod_install_list_uri
     attr_reader :mk_gem_mirror_uri
     attr_reader :mk_gemlist_uri
+    attr_reader :mk_vmodel_path
 
     def initialize
       @default_mk_log_level = Logger::INFO
@@ -68,6 +69,7 @@ module RazorMicrokernel
       @mk_fact_excl_pattern = Regexp.new(mk_conf['mk_fact_excl_pattern'])
       @mk_register_path = mk_conf['mk_register_path']
       @mk_checkin_path = mk_conf['mk_checkin_path']
+      @mk_vmodel_path = mk_conf['mk_vmodel_path']
       case mk_conf['mk_log_level']
         when "Logger::FATAL"
           @mk_log_level = Logger::FATAL

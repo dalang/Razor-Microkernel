@@ -1,6 +1,7 @@
 ---
 mk_kmod_install_list_uri: http://localhost:2157/tinycorelinux/kmod-install-list
 mk_register_path: /razor/api/node/register
+mk_vmodel_path: /razor/api/policy/vcallback
 mk_tce_mirror_uri: http://localhost:2157/tinycorelinux
 mk_uri: http://RAZOR_URI_IP_ADDR:8026
 mk_tce_mirror_port: 2157

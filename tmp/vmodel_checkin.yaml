@@ -1,0 +1,6 @@
+--- # vmodel process state flag
+firmware: false
+baking: false
+bmc: false
+raid: false
+bios: false

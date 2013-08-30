@@ -118,6 +118,28 @@ end
 # a true value, after that the value in this file will be false)
 FIRST_CHECKIN_STATE_FILENAME = "/tmp/first_checkin.yaml"
 
+# file used to track baremetal state in vmodel process
+VMODEL_CHECKIN_STATE_FILENAME = "/tmp/vmodel_checkin.yaml"
+
+# get/set api for vmodel_checkin.yaml
+def set_vmodel_checkin!(key, value)
+  return unless File.exists?(VMODEL_CHECKIN_STATE_FILENAME)
+  vmodel_state = YAML::load(File.open(VMODEL_CHECKIN_STATE_FILENAME))
+  logger.info "set_vmodel_checkin #{vmodel_state.fetch(key)} ==> #{value}"
+  vmodel_state.fetch(key) { |k|
+    logger.debug key + "=" + value; vmodel_state[k] = value }
+  File.open(VMODEL_CHECKIN_STATE_FILENAME, 'w') { |file| YAML.dump(vmodel_state, file)
+  }
+end
+
+def get_vmodel_checkin(key)
+  return 'none' unless File.exists?(VMODEL_CHECKIN_STATE_FILENAME)
+  vmodel_state = YAML::load(File.open(VMODEL_CHECKIN_STATE_FILENAME))
+  ret = vmodel_state.fetch(key, 'none')
+  logger.info "get_vmodel_checkin #{ret}"
+  ret
+end
+
 # checks to see if this is the first checkin being made by this node
 # since it was booted up
 def is_first_checkin?
@@ -134,6 +156,10 @@ def first_checkin_performed
   File.open(FIRST_CHECKIN_STATE_FILENAME, 'w') { |file|
     YAML::dump(first_checkin_flag, file)
   }
+end
+
+def vmodel_api_uri(command, option)
+  vmodel_uri + '/' + command + '/' + option + "?hw_id=#{hw_id}"
 end
 
 # set up a global variable that will be used in the RazorMicrokernel::Logging mixin
@@ -201,6 +227,8 @@ if config_manager.config_file_exists? then
   # and load the TCL extensions from the configuration file (if any exist)
   load_tcl_extensions(config_manager.mk_tce_install_list_uri, config_manager.mk_tce_mirror_uri)
 
+  # add 'vmodel slice' configuration
+  vmodel_uri =  razor_uri + config_manager.mk_vmodel_path
 else
 
   checkin_uri = nil
@@ -223,6 +251,7 @@ sleep(rand_secs)
 
 # parameters used for checkin process
 idle = 'idle'
+
 
 # and enter the main event-handling loop
 loop do
@@ -256,6 +285,7 @@ loop do
       checkin_uri_string << "&first_checkin=#{is_first_checkin}" if is_first_checkin
       logger.info "checkin_uri_string = #{checkin_uri_string}"
       uri = URI checkin_uri_string
+
 
       # then,handle the reply (could include a command that must be handled)
       response = Net::HTTP.get(uri)
@@ -291,6 +321,17 @@ loop do
               logger.debug "Checkin failed; is_first_checkin = #{is_first_checkin}"
           end
 
+        elsif ['firmware', 'baking', 'bmc', 'raid', 'bios'].include? command then
+          logger.info "begin vmodel process"
+          unless get_vmodel_checkin(command)
+            set_vmodel_checkin!(command, true)
+            idle = command
+            logger.info "curl #{vmodel_api_uri(command, 'start')}"
+            %x[curl #{vmodel_api_uri(command, 'start')}]
+            %x[curl #{vmodel_api_uri(command, 'file')} -L /tmp/#{command}.sh]
+            %x[curl #{vmodel_api_uri(command, 'end')}]
+            idle = 'idle'
+          end
         elsif command == "reboot" then
           # reboots the node, NOW...no sense in logging this since the "filesystem"
           # is all in memory and will disappear when the reboot happens

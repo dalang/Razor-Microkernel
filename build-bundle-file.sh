@@ -31,7 +31,7 @@ OPTIONS:
    -p, --build-prod-image     build a production ISO (no openssh, no passwd)
    -d, --build-debug-image    build a debug ISO (enable automatic console login)
    -t, --tc-passwd=PASSWD     specify a password for the tc user
-   -c, --config=FILE          optional: specify a file containing configuration 
+   -c, --config=FILE          optional: specify a file containing configuration
                                 values; see bundle.cfg.example
    -v, --verbose              be (extremely) verbose about the build process
 
@@ -82,11 +82,11 @@ do
   case $1 in
   -b|--builtin-list) BUILTIN_LIST=`echo $2 | tr -d "'" | sed 's:^[=]\?\(.*\)$:\1:'`; shift;;
   -m|--mirror-list) MIRROR_LIST=`echo $2 | tr -d "'" | sed 's:^[=]\?\(.*\)$:\1:'`; shift;;
-  -p|--build-prod-image) 
-    if [ $BUNDLE_TYPE_SELECTED -eq 0 ]; then 
-      BUNDLE_TYPE='prod'; 
+  -p|--build-prod-image)
+    if [ $BUNDLE_TYPE_SELECTED -eq 0 ]; then
+      BUNDLE_TYPE='prod';
       BUNDLE_TYPE_SELECTED=1
-    else 
+    else
       printf '%s: ERROR, cannot specify both -d and -p\n' "$0"
       printf '    (bundle must be either prod or debug, not both)\n'
       usage
@@ -94,10 +94,10 @@ do
     fi
     ;;
   -d|--build-debug-image)
-    if [ $BUNDLE_TYPE_SELECTED -eq 0 ]; then 
-      BUNDLE_TYPE='debug'; 
+    if [ $BUNDLE_TYPE_SELECTED -eq 0 ]; then
+      BUNDLE_TYPE='debug';
       BUNDLE_TYPE_SELECTED=1
-    else 
+    else
       printf '%s: ERROR, cannot specify both -d and -p\n' "$0"
       printf '    (bundle must be either prod or debug, not both)\n'
       usage
@@ -143,25 +143,25 @@ fi
 if [ -n "$CONFIG_FILE" ]; then
   read_config_file $CONFIG_FILE
 fi
-# Use any config-values which were provided in the config file or environment 
+# Use any config-values which were provided in the config file or environment
 # variables, but not over-ridden on the command-line
-[ -z "$BUILTIN_LIST" -a -n "$MK_BUNDLE_BUILTIN_LIST" ] && 
+[ -z "$BUILTIN_LIST" -a -n "$MK_BUNDLE_BUILTIN_LIST" ] &&
   BUILTIN_LIST="$MK_BUNDLE_BUILTIN_LIST"
-[ -z "$MIRROR_LIST" -a -n "$MK_BUNDLE_MIRROR_LIST" ] && 
+[ -z "$MIRROR_LIST" -a -n "$MK_BUNDLE_MIRROR_LIST" ] &&
   MIRROR_LIST="$MK_BUNDLE_MIRROR_LIST"
-[ -z "$TC_PASSWD" -a -n "$MK_BUNDLE_TC_PASSWD" ] && 
+[ -z "$TC_PASSWD" -a -n "$MK_BUNDLE_TC_PASSWD" ] &&
   TC_PASSWD="$MK_BUNDLE_TC_PASSWD"
-[ -z "$BUNDLE_TYPE" -a -n "$MK_BUNDLE_TYPE" ] && 
+[ -z "$BUNDLE_TYPE" -a -n "$MK_BUNDLE_TYPE" ] &&
   BUNDLE_TYPE="$MK_BUNDLE_TYPE"
-[ -z "$TCL_MIRROR_URI" -a -n "$MK_BUNDLE_TCL_MIRROR_URI" ] && 
+[ -z "$TCL_MIRROR_URI" -a -n "$MK_BUNDLE_TCL_MIRROR_URI" ] &&
   TCL_MIRROR_URI="$MK_BUNDLE_TCL_MIRROR_URI"
-[ -z "$TCL_ISO_URL" -a -n "$MK_BUNDLE_TCL_ISO_URL" ] && 
+[ -z "$TCL_ISO_URL" -a -n "$MK_BUNDLE_TCL_ISO_URL" ] &&
   TCL_ISO_URL="$MK_BUNDLE_TCL_ISO_URL"
-[ -z "$RUBY_GEMS_URL" -a -n "$MK_BUNDLE_RUBY_GEMS_URL" ] && 
+[ -z "$RUBY_GEMS_URL" -a -n "$MK_BUNDLE_RUBY_GEMS_URL" ] &&
   RUBY_GEMS_URL="$MK_BUNDLE_RUBY_GEMS_URL"
-[ -z "$OPEN_VM_TOOLS_URL" -a -n "$MK_BUNDLE_OPEN_VM_TOOLS_URL" ] && 
+[ -z "$OPEN_VM_TOOLS_URL" -a -n "$MK_BUNDLE_OPEN_VM_TOOLS_URL" ] &&
   OPEN_VM_TOOLS_URL="$MK_BUNDLE_OPEN_VM_TOOLS_URL"
-[ -z "$GEM_SERVER_URI" -a -n "$MK_BUNDLE_GEM_SERVER_URI" ] && 
+[ -z "$GEM_SERVER_URI" -a -n "$MK_BUNDLE_GEM_SERVER_URI" ] &&
   GEM_SERVER_URI="$MK_BUNDLE_GEM_SERVER_URI"
 
 # Set to default anything still not specified, for which there is a reasonable
@@ -316,6 +316,7 @@ wget $WGET_V -P tmp-build-dir/opt $RUBY_GEMS_URL
 # initial behavior of the Razor Microkernel Controller, the third disables automatic
 # login of the tc user when the Microkernel finishes booting)
 cp -p tmp/first_checkin.yaml tmp-build-dir/tmp
+cp -p tmp/vmodel_checkin.yaml tmp-build-dir/tmp
 if [ $BUNDLE_TYPE = 'debug' ]
 then
   # if we're building a "debug" bundle, then copy over a microkernel configuration
