@@ -1,4 +1,4 @@
---- # vmodel process state flag
+--- # flag for state of vmodel phases
 firmware: false
 baking: false
 bmc: false

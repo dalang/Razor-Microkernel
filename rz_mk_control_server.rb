@@ -299,6 +299,7 @@ loop do
         # server would like the Microkernel Controller to take in response to the
         # checkin it just performed)
         command = response_hash['response']['command_name']
+        command_param = response['response']['command_param']
 
         # then trigger appropriate action based on the command in the response
         if command == "acknowledge" then
@@ -321,15 +322,39 @@ loop do
               logger.debug "Checkin failed; is_first_checkin = #{is_first_checkin}"
           end
 
-        elsif ['firmware', 'baking', 'bmc', 'raid', 'bios'].include? command then
-          logger.info "begin vmodel process"
+        elsif command == 'baking'
+          logger.info "Processing VModel phase: #{command}"
           unless get_vmodel_checkin(command)
             set_vmodel_checkin!(command, true)
             idle = command
-            logger.info "curl #{vmodel_api_uri(command, 'start')}"
-            %x[curl #{vmodel_api_uri(command, 'start')}]
-            %x[curl #{vmodel_api_uri(command, 'file')} -L /tmp/#{command}.sh]
-            %x[curl #{vmodel_api_uri(command, 'end')}]
+            case command_param['baking_mode']
+            when 'skip'
+              %x[curl #{vmodel_api_uri(command, 'skip')}]
+            when 'solo'
+              %x[curl #{vmodel_api_uri(command, 'start')}]
+              %x[curl #{vmodel_api_uri(command, 'file')} -L /tmp/#{command}.sh]
+              %x[curl #{vmodel_api_uri(command, 'solo')}]
+            else # normal baking
+              %x[curl #{vmodel_api_uri(command, 'start')}]
+              %x[curl #{vmodel_api_uri(command, 'file')} -L /tmp/#{command}.sh]
+              %x[curl #{vmodel_api_uri(command, 'end')}]
+            end
+            idle = 'idle'
+          end
+        elsif ['firmware', 'bmc', 'raid', 'bios'].include? command then
+          logger.info "Processing VModel phase: #{command}"
+          unless get_vmodel_checkin(command)
+            set_vmodel_checkin!(command, true)
+            idle = command
+            if command_param["enabled"] == false
+              logger.info "curl #{vmodel_api_uri(command, 'skip')}"
+              %x[curl #{vmodel_api_uri(command, 'skip')}]
+            else
+              logger.info "curl #{vmodel_api_uri(command, 'start')}"
+              %x[curl #{vmodel_api_uri(command, 'start')}]
+              %x[curl #{vmodel_api_uri(command, 'file')} -L /tmp/#{command}.sh]
+              %x[curl #{vmodel_api_uri(command, 'end')}]
+            end
             idle = 'idle'
           end
         elsif command == "reboot" then
