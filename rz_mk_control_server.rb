@@ -158,10 +158,6 @@ def first_checkin_performed
   }
 end
 
-def vmodel_api_uri(command, option)
-  vmodel_uri + '/' + command + '/' + option + "?hw_id=#{hw_id}"
-end
-
 # set up a global variable that will be used in the RazorMicrokernel::Logging mixin
 # to determine where to place the log messages from this script
 RZ_MK_LOG_PATH = "/var/log/rz_mk_controller.log"
@@ -178,6 +174,7 @@ fact_manager = RazorMicrokernel::RzMkFactManager.new('/tmp/prev_facts.yaml')
 
 # and set the Registration Manager to nil (will update this, below)
 registration_manager = nil
+
 
 # test to see if the configuration file exists
 if config_manager.config_file_exists? then
@@ -299,7 +296,7 @@ loop do
         # server would like the Microkernel Controller to take in response to the
         # checkin it just performed)
         command = response_hash['response']['command_name']
-        command_param = response['response']['command_param']
+        command_param = response_hash['response']['command_param']
 
         # then trigger appropriate action based on the command in the response
         if command == "acknowledge" then
@@ -322,22 +319,22 @@ loop do
               logger.debug "Checkin failed; is_first_checkin = #{is_first_checkin}"
           end
 
-        elsif command == 'baking'
+        elsif command == 'baking' then
           logger.info "Processing VModel phase: #{command}"
           unless get_vmodel_checkin(command)
             set_vmodel_checkin!(command, true)
             idle = command
             case command_param['baking_mode']
-            when 'skip'
-              %x[curl #{vmodel_api_uri(command, 'skip')}]
-            when 'solo'
-              %x[curl #{vmodel_api_uri(command, 'start')}]
-              %x[curl #{vmodel_api_uri(command, 'file')} -L /tmp/#{command}.sh]
-              %x[curl #{vmodel_api_uri(command, 'solo')}]
-            else # normal baking
-              %x[curl #{vmodel_api_uri(command, 'start')}]
-              %x[curl #{vmodel_api_uri(command, 'file')} -L /tmp/#{command}.sh]
-              %x[curl #{vmodel_api_uri(command, 'end')}]
+              when 'skip'
+                %x[wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}]
+              when 'solo'
+                %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
+                %x[wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id} -O /tmp/#{command}.sh]
+                %x[wget -t1 -T3 #{vmodel_uri}/#{command}/solo?hw_id=#{hw_id}]
+              else # normal baking
+                %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
+                %x[wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id} -O /tmp/#{command}.sh]
+                %x[wget -t1 -T3 #{vmodel_uri}/#{command}/end?hw_id=#{hw_id}]
             end
             idle = 'idle'
           end
@@ -346,14 +343,14 @@ loop do
           unless get_vmodel_checkin(command)
             set_vmodel_checkin!(command, true)
             idle = command
-            if command_param["enabled"] == false
-              logger.info "curl #{vmodel_api_uri(command, 'skip')}"
-              %x[curl #{vmodel_api_uri(command, 'skip')}]
+            if command_param["enabled"] == 'false'
+              logger.info "wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}"
+              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}]
             else
-              logger.info "curl #{vmodel_api_uri(command, 'start')}"
-              %x[curl #{vmodel_api_uri(command, 'start')}]
-              %x[curl #{vmodel_api_uri(command, 'file')} -L /tmp/#{command}.sh]
-              %x[curl #{vmodel_api_uri(command, 'end')}]
+              logger.info "wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}"
+              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
+              %x[wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id} -O /tmp/#{command}.sh]
+              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/end?hw_id=#{hw_id}]
             end
             idle = 'idle'
           end
