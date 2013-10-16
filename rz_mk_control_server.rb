@@ -297,6 +297,7 @@ loop do
         # checkin it just performed)
         command = response_hash['response']['command_name']
         command_param = response_hash['response']['command_param']
+        files = command_param["file"] unless command_param.class != Array
 
         # then trigger appropriate action based on the command in the response
         if command == "acknowledge" then
@@ -329,27 +330,92 @@ loop do
                 %x[wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}]
               when 'solo'
                 %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
-                %x[wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id} -O /tmp/#{command}.sh]
+                files.each do
+                  |file_name|
+                  %x[sudo wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id}&name=#{file_name.match(/(.+)\..+/)[1]} -O /tmp/#{file_name}] if file_name.match(/(.+)\..+/)[1]
+                end
                 %x[wget -t1 -T3 #{vmodel_uri}/#{command}/solo?hw_id=#{hw_id}]
               else # normal baking
                 %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
-                %x[wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id} -O /tmp/#{command}.sh]
+                files.each do
+                  |file_name|
+                  %x[sudo wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id}&name=#{file_name.match(/(.+)\..+/)[1]} -O /tmp/#{file_name}] if file_name.match(/(.+)\..+/)[1]
+                end
                 %x[wget -t1 -T3 #{vmodel_uri}/#{command}/end?hw_id=#{hw_id}]
             end
             idle = 'idle'
           end
-        elsif ['firmware', 'bmc', 'raid', 'bios'].include? command then
+        elsif command == 'firmware' then
           logger.info "Processing VModel phase: #{command}"
           unless get_vmodel_checkin(command)
             set_vmodel_checkin!(command, true)
             idle = command
             if command_param["enabled"] == 'false'
-              logger.info "wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}"
+              logger.info "Skip firmware updating"
+              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}]
+            else
+              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
+              files.each do
+                |file_name|
+                %x[sudo wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id}&name=#{file_name.match(/(.+)\..+/)[1]} -O /tmp/#{file_name}] if file_name.match(/(.+)\..+/)[1]
+              end
+              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/end?hw_id=#{hw_id}]
+            end
+            idle = 'idle'
+          end
+        elsif command == 'bmc' then
+          logger.info "Processing VModel phase: #{command}"
+          unless get_vmodel_checkin(command)
+            set_vmodel_checkin!(command, true)
+            idle = command
+            if command_param["enabled"] == 'false'
+              logger.info "Skip bmc/ilo setting"
               %x[wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}]
             else
               logger.info "wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}"
               %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
-              %x[wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id} -O /tmp/#{command}.sh]
+              files.each do
+                |file_name|
+                %x[sudo wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id}&name=#{file_name.match(/(.+)\..+/)[1]} -O /tmp/#{file_name}] if file_name.match(/(.+)\..+/)[1]
+              end
+              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/end?hw_id=#{hw_id}]
+            end
+            idle = 'idle'
+          end
+        elsif command == 'raid' then
+          logger.info "Processing VModel phase: #{command}"
+          unless get_vmodel_checkin(command)
+            set_vmodel_checkin!(command, true)
+            idle = command
+            if command_param["enabled"] == 'false'
+              logger.info "Skip raid setting"
+              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}]
+            else
+              logger.info "wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}"
+              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
+              files.each do
+                |file_name|
+                %x[sudo wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id}&name=#{file_name.match(/(.+)\..+/)[1]} -O /tmp/#{file_name}] if file_name.match(/(.+)\..+/)[1]
+              end
+              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/end?hw_id=#{hw_id}]
+            end
+            idle = 'idle'
+          end
+        elsif command == 'bios' then
+          logger.info "Processing VModel phase: #{command}"
+          unless get_vmodel_checkin(command)
+            set_vmodel_checkin!(command, true)
+            idle = command
+            if command_param["enabled"] == 'false'
+              logger.info "Skip bios setting"
+              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}]
+            else
+              logger.info "wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}"
+              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
+              files.each do
+                |file_name|
+                %x[sudo wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id}&name=#{file_name.match(/(.+)\..+/)[1]} -O /tmp/#{file_name}] if file_name.match(/(.+)\..+/)[1]
+              end
               %x[wget -t1 -T3 #{vmodel_uri}/#{command}/end?hw_id=#{hw_id}]
             end
             idle = 'idle'
