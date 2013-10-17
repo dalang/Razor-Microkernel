@@ -13,10 +13,40 @@ require 'cgi'
 require 'json'
 require 'webrick'
 require 'razor_microkernel/rz_mk_configuration_manager'
+require 'razor_microkernel/rz_mk_vmodel_manager'
 require 'razor_microkernel/logging'
 
 # include the WEBrick mixin (makes this into a WEBrick server instance)
 include WEBrick
+
+class MKVmodelServlet < HTTPServlet::AbstractServlet
+  def do_GET(request, response)
+    status, content_type, body = vmodel_done(request)
+
+    response.status = status
+    response['Content-Type'] = content_type
+    response.body = body
+  end
+
+  def vmodel_done(request)
+    vmodel_manager = (RazorMicrokernel::RzMkVmodelManager).instance
+    case request.query['phase']
+    when "firmware"
+      ret = vmodel_manager.firmware_done
+    when "baking"
+      ret = vmodel_manager.baking_done
+    when "bmc"
+      ret = vmodel_manager.bmc_done
+    when "raid"
+      ret = vmodel_manager.raid_done
+    when "bios"
+      ret = vmodel_manager.bios_done
+    else
+      return 400, "text/plain", "name of vmodel phase is not exist"
+    end
+    return 200, "text/plain", "OK #{ret}"
+  end
+end
 
 # next, define our actions (as servlets)...for now we have one (used to
 # save the Microkernel Configuration)
@@ -84,6 +114,7 @@ s = HTTPServer.new(:Port => 2156, :Logger => logger, :ServerType => WEBrick::Dae
 # mount our servlets as directories under our HTTP server's URI
 
 s.mount("/setMkConfig", MKConfigServlet)
+s.mount("/vmodel", MKVmodelServlet)
 
 # setup the server to shut down if the process is shut down
 

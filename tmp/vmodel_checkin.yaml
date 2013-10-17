@@ -1,6 +1,6 @@
 --- # flag for state of vmodel phases
-firmware: false
-baking: false
-bmc: false
-raid: false
-bios: false
+firmware: null
+baking: null
+bmc: null
+raid: null
+bios: null

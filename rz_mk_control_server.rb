@@ -18,6 +18,7 @@ require 'razor_microkernel/logging'
 require 'razor_microkernel/rz_mk_registration_manager'
 require 'razor_microkernel/rz_mk_fact_manager'
 require 'razor_microkernel/rz_mk_configuration_manager'
+require 'razor_microkernel/rz_mk_vmodel_manager'
 require 'razor_microkernel/rz_mk_kernel_module_manager'
 require 'razor_microkernel/rz_mk_gem_controller'
 
@@ -118,27 +119,6 @@ end
 # a true value, after that the value in this file will be false)
 FIRST_CHECKIN_STATE_FILENAME = "/tmp/first_checkin.yaml"
 
-# file used to track baremetal state in vmodel process
-VMODEL_CHECKIN_STATE_FILENAME = "/tmp/vmodel_checkin.yaml"
-
-# get/set api for vmodel_checkin.yaml
-def set_vmodel_checkin!(key, value)
-  return unless File.exists?(VMODEL_CHECKIN_STATE_FILENAME)
-  vmodel_state = YAML::load(File.open(VMODEL_CHECKIN_STATE_FILENAME))
-  logger.info "set_vmodel_checkin #{vmodel_state.fetch(key)} ==> #{value}"
-  vmodel_state.fetch(key) { |k|
-    logger.debug key + "=" + value; vmodel_state[k] = value }
-  File.open(VMODEL_CHECKIN_STATE_FILENAME, 'w') { |file| YAML.dump(vmodel_state, file)
-  }
-end
-
-def get_vmodel_checkin(key)
-  return 'none' unless File.exists?(VMODEL_CHECKIN_STATE_FILENAME)
-  vmodel_state = YAML::load(File.open(VMODEL_CHECKIN_STATE_FILENAME))
-  ret = vmodel_state.fetch(key, 'none')
-  logger.info "get_vmodel_checkin #{ret}"
-  ret
-end
 
 # checks to see if this is the first checkin being made by this node
 # since it was booted up
@@ -167,6 +147,8 @@ include RazorMicrokernel::Logging
 
 # get a reference to the Configuration Manager instance (a singleton)
 config_manager = (RazorMicrokernel::RzMkConfigurationManager).instance
+
+vmodel_manager = (RazorMicrokernel::RzMkVmodelManager).instance
 
 # setup the RzMkFactManager instance (we'll use this later, in our
 # RzMkRegistrationManager constructor)
@@ -271,6 +253,17 @@ loop do
       # FactManager.  Currently, it includes a list of all of the network interfaces that
       # have names that look like 'eth[0-9]+', but that may change down the line.
       hw_id = fact_manager.get_hw_id_array
+      vmodel_manager.hw_id = hw_id
+      # update idle if in vmodel process
+      if ['firmware', 'baking', 'bmc', 'raid', 'bios'].include? idle
+        if vmodel_manager.get_vmodel_checkin(idle) == 'done'
+          vmodel_manager.send_request_to_server idle, 'end'
+          idle = 'idle'
+        elsif idle == 'baking' and vmodel_manager.get_vmodel_checkin(idle) == 'done_solo'
+          vmodel_manager.send_request_to_server 'baking', 'solo'
+          idle = 'idle'
+        end
+      end
 
       # check to see if this is the first checkin or not (this flag will be true until the
       # node successfully registers for the first time after boot, after that it will be
@@ -297,7 +290,7 @@ loop do
         # checkin it just performed)
         command = response_hash['response']['command_name']
         command_param = response_hash['response']['command_param']
-        files = command_param["file"] unless command_param.class != Array
+        files = command_param["file"] unless command_param["file"].class != Array
 
         # then trigger appropriate action based on the command in the response
         if command == "acknowledge" then
@@ -319,107 +312,21 @@ loop do
             else
               logger.debug "Checkin failed; is_first_checkin = #{is_first_checkin}"
           end
-
         elsif command == 'baking' then
-          logger.info "Processing VModel phase: #{command}"
-          unless get_vmodel_checkin(command)
-            set_vmodel_checkin!(command, true)
-            idle = command
-            case command_param['baking_mode']
-              when 'skip'
-                %x[wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}]
-              when 'solo'
-                %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
-                files.each do
-                  |file_name|
-                  %x[sudo wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id}&name=#{file_name.match(/(.+)\..+/)[1]} -O /tmp/#{file_name}] if file_name.match(/(.+)\..+/)[1]
-                end
-                %x[wget -t1 -T3 #{vmodel_uri}/#{command}/solo?hw_id=#{hw_id}]
-              else # normal baking
-                %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
-                files.each do
-                  |file_name|
-                  %x[sudo wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id}&name=#{file_name.match(/(.+)\..+/)[1]} -O /tmp/#{file_name}] if file_name.match(/(.+)\..+/)[1]
-                end
-                %x[wget -t1 -T3 #{vmodel_uri}/#{command}/end?hw_id=#{hw_id}]
-            end
-            idle = 'idle'
-          end
+          logger.info "Processing VModel phase: #{command}, file: #{files}"
+          idle = vmodel_manager.do_baking command_param['baking_mode'], files
         elsif command == 'firmware' then
-          logger.info "Processing VModel phase: #{command}"
-          unless get_vmodel_checkin(command)
-            set_vmodel_checkin!(command, true)
-            idle = command
-            if command_param["enabled"] == 'false'
-              logger.info "Skip firmware updating"
-              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}]
-            else
-              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
-              files.each do
-                |file_name|
-                %x[sudo wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id}&name=#{file_name.match(/(.+)\..+/)[1]} -O /tmp/#{file_name}] if file_name.match(/(.+)\..+/)[1]
-              end
-              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/end?hw_id=#{hw_id}]
-            end
-            idle = 'idle'
-          end
+          logger.info "Processing VModel phase: #{command}, file: #{files}"
+          idle = vmodel_manager.update_firmware command_param['enabled'], files
         elsif command == 'bmc' then
-          logger.info "Processing VModel phase: #{command}"
-          unless get_vmodel_checkin(command)
-            set_vmodel_checkin!(command, true)
-            idle = command
-            if command_param["enabled"] == 'false'
-              logger.info "Skip bmc/ilo setting"
-              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}]
-            else
-              logger.info "wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}"
-              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
-              files.each do
-                |file_name|
-                %x[sudo wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id}&name=#{file_name.match(/(.+)\..+/)[1]} -O /tmp/#{file_name}] if file_name.match(/(.+)\..+/)[1]
-              end
-              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/end?hw_id=#{hw_id}]
-            end
-            idle = 'idle'
-          end
+          logger.info "Processing VModel phase: #{command}, file: #{files}"
+          idle = vmodel_manager.set_bmc command_param['enabled'], files
         elsif command == 'raid' then
-          logger.info "Processing VModel phase: #{command}"
-          unless get_vmodel_checkin(command)
-            set_vmodel_checkin!(command, true)
-            idle = command
-            if command_param["enabled"] == 'false'
-              logger.info "Skip raid setting"
-              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}]
-            else
-              logger.info "wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}"
-              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
-              files.each do
-                |file_name|
-                %x[sudo wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id}&name=#{file_name.match(/(.+)\..+/)[1]} -O /tmp/#{file_name}] if file_name.match(/(.+)\..+/)[1]
-              end
-              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/end?hw_id=#{hw_id}]
-            end
-            idle = 'idle'
-          end
+          logger.info "Processing VModel phase: #{command}, file: #{files}"
+          idle = vmodel_manager.set_raid command_param['enabled'], files
         elsif command == 'bios' then
-          logger.info "Processing VModel phase: #{command}"
-          unless get_vmodel_checkin(command)
-            set_vmodel_checkin!(command, true)
-            idle = command
-            if command_param["enabled"] == 'false'
-              logger.info "Skip bios setting"
-              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/skip?hw_id=#{hw_id}]
-            else
-              logger.info "wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}"
-              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/start?hw_id=#{hw_id}]
-              files.each do
-                |file_name|
-                %x[sudo wget #{vmodel_uri}/#{command}/file?hw_id=#{hw_id}&name=#{file_name.match(/(.+)\..+/)[1]} -O /tmp/#{file_name}] if file_name.match(/(.+)\..+/)[1]
-              end
-              %x[wget -t1 -T3 #{vmodel_uri}/#{command}/end?hw_id=#{hw_id}]
-            end
-            idle = 'idle'
-          end
+          logger.info "Processing VModel phase: #{command}, file: #{files}"
+          idle = vmodel_manager.set_bios command_param['enabled'], files
         elsif command == "reboot" then
           # reboots the node, NOW...no sense in logging this since the "filesystem"
           # is all in memory and will disappear when the reboot happens
