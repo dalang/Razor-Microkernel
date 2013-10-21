@@ -291,6 +291,7 @@ loop do
         command = response_hash['response']['command_name']
         command_param = response_hash['response']['command_param']
         files = command_param["file"] unless command_param["file"].class != Array
+        cicode = command_param["cicode"]
 
         # then trigger appropriate action based on the command in the response
         if command == "acknowledge" then
@@ -314,19 +315,19 @@ loop do
           end
         elsif command == 'baking' then
           logger.info "Processing VModel phase: #{command}, file: #{files}"
-          idle = vmodel_manager.do_baking command_param['baking_mode'], files
+          idle = vmodel_manager.do_baking command_param['baking_mode'], files, cicode
         elsif command == 'firmware' then
           logger.info "Processing VModel phase: #{command}, file: #{files}"
-          idle = vmodel_manager.update_firmware command_param['enabled'], files
+          idle = vmodel_manager.update_firmware command_param['enabled'], files, cicode
         elsif command == 'bmc' then
           logger.info "Processing VModel phase: #{command}, file: #{files}"
-          idle = vmodel_manager.set_bmc command_param['enabled'], files
+          idle = vmodel_manager.set_bmc command_param['enabled'], files, cicode
         elsif command == 'raid' then
           logger.info "Processing VModel phase: #{command}, file: #{files}"
-          idle = vmodel_manager.set_raid command_param['enabled'], files
+          idle = vmodel_manager.set_raid command_param['enabled'], files, cicode
         elsif command == 'bios' then
           logger.info "Processing VModel phase: #{command}, file: #{files}"
-          idle = vmodel_manager.set_bios command_param['enabled'], files
+          idle = vmodel_manager.set_bios command_param['enabled'], files, cicode
         elsif command == "reboot" then
           # reboots the node, NOW...no sense in logging this since the "filesystem"
           # is all in memory and will disappear when the reboot happens

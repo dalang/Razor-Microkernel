@@ -113,6 +113,35 @@ module RazorMicrokernel
                              "configuration"]
         add_flattened_array_to_facts!(hash_map["network_array"], facts_map,
                                       "mk_hw_nic", fields_to_include)
+
+        # added filed by ctrip bare-metal team
+        unless facts_map[:serialnumber]
+          begin
+            res = %x[dmidecode -s system-serial-number]
+            res = res.gsub(' ', '').gsub("\n", '').gsub("\r", '')
+            facts_map[:serialnumber] = res
+          rescue
+            logger.warn("Can't get serial number!")
+          end
+        end
+
+        unless facts_map[:product_name]
+          begin
+            product_name = %x[dmidecode | grep -m1 "Product Name:" | cut -d : -f 2 | sed 's/^[ \t]*//;s/[ \t]*$//']
+            facts_map[:product_name] = product_name
+          rescue
+            logger.warn("Can't get product name!")
+          end
+        end
+
+        unless facts_map[:vendor]
+          begin
+            vendor = %x[dmidecode | grep -m1 "Vendor" | cut -d : -f 2 | sed 's/^[ \t]*//;s/[ \t]*$//']
+            facts_map[:vendor] = vendor
+          rescue
+            logger.warn("Can't get vendor!")
+          end
+        end
       rescue SystemExit => e
         throw e
       rescue NoMemoryError => e

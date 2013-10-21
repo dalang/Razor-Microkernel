@@ -13,3 +13,4 @@ mk_fact_excl_pattern: (^facter.*$)|(^id$)|(^kernel.*$)|(^memoryfree$)|(^operatin
 mk_log_level: Logger::INFO
 mk_gem_mirror_uri: http://localhost:2158/gem-mirror
 mk_gemlist_uri: http://localhost:2158/gem-mirror/gems/gem.list
+mk_hw_log_path: /nfs/log/HP/
