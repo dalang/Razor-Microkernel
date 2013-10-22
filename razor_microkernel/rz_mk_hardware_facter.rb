@@ -125,10 +125,10 @@ module RazorMicrokernel
           end
         end
 
-        unless facts_map[:product_name]
+        unless facts_map[:productname]
           begin
             product_name = %x[dmidecode | grep -m1 "Product Name:" | cut -d : -f 2 | sed 's/^[ \t]*//;s/[ \t]*$//']
-            facts_map[:product_name] = product_name
+            facts_map[:productname] = product_name.chop
           rescue
             logger.warn("Can't get product name!")
           end
@@ -137,7 +137,7 @@ module RazorMicrokernel
         unless facts_map[:vendor]
           begin
             vendor = %x[dmidecode | grep -m1 "Vendor" | cut -d : -f 2 | sed 's/^[ \t]*//;s/[ \t]*$//']
-            facts_map[:vendor] = vendor
+            facts_map[:vendor] = vendor.chop
           rescue
             logger.warn("Can't get vendor!")
           end
