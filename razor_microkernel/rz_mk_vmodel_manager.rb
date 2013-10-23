@@ -95,6 +95,7 @@ module RazorMicrokernel
           send_request_to_server 'firmware', 'start'
           files.each do |file_name|
             get_file_from_server 'firmware', file_name
+          end
           unless @log_file
             timestamp = %x[date +%Y%m%d-%H%M%S]
             config_manager = (RazorMicrokernel::RzMkConfigurationManager).instance
