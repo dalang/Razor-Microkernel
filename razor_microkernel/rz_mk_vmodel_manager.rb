@@ -93,7 +93,8 @@ module RazorMicrokernel
           current_state = 'idle'
         else
           send_request_to_server 'firmware', 'start'
-          get_file_from_server 'firmware', file_name
+          files.each do |file_name|
+            get_file_from_server 'firmware', file_name
           unless @log_file
             timestamp = %x[date +%Y%m%d-%H%M%S]
             config_manager = (RazorMicrokernel::RzMkConfigurationManager).instance
