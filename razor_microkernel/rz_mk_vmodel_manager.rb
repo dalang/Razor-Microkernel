@@ -284,9 +284,9 @@ module RazorMicrokernel
       if get_vmodel_checkin('raid') == 'running'
         #send_request_to_server 'raid', 'end'
         set_vmodel_checkin!('raid', 'done')
-        return 'bios setting done accepted'
+        return 'raid setting done accepted'
       end
-      return 'bios setting is not running'
+      return 'raid setting is not running'
     end
 
     def bmc_done
