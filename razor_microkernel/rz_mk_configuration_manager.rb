@@ -33,6 +33,7 @@ module RazorMicrokernel
     attr_reader :mk_gemlist_uri
     attr_reader :mk_vmodel_path
     attr_reader :mk_hw_log_path
+    attr_reader :mk_nfs_server_ip
 
     def initialize
       @default_mk_log_level = Logger::INFO
@@ -72,6 +73,7 @@ module RazorMicrokernel
       @mk_checkin_path = mk_conf['mk_checkin_path']
       @mk_vmodel_path = mk_conf['mk_vmodel_path']
       @mk_hw_log_path = mk_conf['mk_hw_log_path']
+      @mk_nfs_server_ip= mk_conf['mk_nfs_server_ip']
       case mk_conf['mk_log_level']
         when "Logger::FATAL"
           @mk_log_level = Logger::FATAL

@@ -231,6 +231,13 @@ sleep(rand_secs)
 # parameters used for checkin process
 idle = 'idle'
 
+# mount nfs server
+valid_ip_address_regex = /^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$/
+
+if config_map.mk_nfs_server_ip =~ valid_ip_address_regex
+  %x[ mkdir -p /nfs ]
+  %x[ mount -t nfs -o nolock #{config_manager.mk_nfs_server_ip}:/nfs /nfs]
+end
 
 # and enter the main event-handling loop
 loop do

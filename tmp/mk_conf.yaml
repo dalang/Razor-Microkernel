@@ -14,3 +14,4 @@ mk_log_level: Logger::INFO
 mk_gem_mirror_uri: http://localhost:2158/gem-mirror
 mk_gemlist_uri: http://localhost:2158/gem-mirror/gems/gem.list
 mk_hw_log_path: /nfs/log/HP/
+mk_nfs_server_ip: 10.4.3.9
