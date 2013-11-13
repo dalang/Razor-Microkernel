@@ -320,25 +320,35 @@ loop do
             else
               logger.debug "Checkin failed; is_first_checkin = #{is_first_checkin}"
           end
-        elsif command == 'baking' then
-          logger.info "Processing VModel phase: #{command}, file: #{files}"
-          idle = vmodel_manager.do_baking command_param['baking_mode'], files, cicode
-        elsif command == 'firmware' then
-          logger.info "Processing VModel phase: #{command}, file: #{files}"
-          idle = vmodel_manager.update_firmware command_param['enabled'], files, cicode
-        elsif command == 'bmc' then
-          logger.info "Processing VModel phase: #{command}, file: #{files}"
-          idle = vmodel_manager.set_bmc command_param['enabled'], files, cicode
-        elsif command == 'raid' then
-          logger.info "Processing VModel phase: #{command}, file: #{files}"
-          idle = vmodel_manager.set_raid command_param['enabled'], files, cicode
-        elsif command == 'bios' then
-          logger.info "Processing VModel phase: #{command}, file: #{files}"
-          idle = vmodel_manager.set_bios command_param['enabled'], files, cicode
         elsif command == "reboot" then
+          # umount nfs server before reboot
+          %x[ umount /nfs ]
           # reboots the node, NOW...no sense in logging this since the "filesystem"
           # is all in memory and will disappear when the reboot happens
           %x[sudo reboot now]
+        else
+          # keep nfs server active
+          if %x[ grep #{config_manager.mk_nfs_server_ip} /proc/mounts ] == ''
+            %x[ mkdir -p /nfs ]
+            %x[ mount -t nfs -o nolock #{config_manager.mk_nfs_server_ip}:/nfs /nfs]
+          else
+            if command == 'baking' then
+              logger.info "Processing VModel phase: #{command}, file: #{files}"
+              idle = vmodel_manager.do_baking command_param['baking_mode'], files, cicode
+            elsif command == 'firmware' then
+              logger.info "Processing VModel phase: #{command}, file: #{files}"
+              idle = vmodel_manager.update_firmware command_param['enabled'], files, cicode
+            elsif command == 'bmc' then
+              logger.info "Processing VModel phase: #{command}, file: #{files}"
+              idle = vmodel_manager.set_bmc command_param['enabled'], files, cicode
+            elsif command == 'raid' then
+              logger.info "Processing VModel phase: #{command}, file: #{files}"
+              idle = vmodel_manager.set_raid command_param['enabled'], files, cicode
+            elsif command == 'bios' then
+              logger.info "Processing VModel phase: #{command}, file: #{files}"
+              idle = vmodel_manager.set_bios command_param['enabled'], files, cicode
+            end
+          end
         end
 
         # next, check the configuration that is included in the response...
