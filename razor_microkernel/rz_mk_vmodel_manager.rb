@@ -104,8 +104,8 @@ module RazorMicrokernel
           # run firmware scripts in background
           set_vmodel_checkin!('firmware', 'running')
           #system "bash /tmp/hpsum.sh >> #{@log_file} &"
-          logger.info "sudo sh /tmp/hpsum.sh >> #{@log_file} &"
-          system "sudo sh /tmp/hpsum.sh >> #{@log_file} &"
+          logger.info "sudo sh /tmp/#{files.first} >> #{@log_file} &"
+          system "sudo sh /tmp/#{files.first} >> #{@log_file} &"
         end
         @firmware = true
       end
@@ -134,8 +134,8 @@ module RazorMicrokernel
           # run ilo setting in background
           set_vmodel_checkin!('bmc', 'running')
           #system "bash /tmp/iloconf.sh >> #{@log_file} &"
-          logger.info "sudo sh /tmp/iloconf.sh >> #{@log_file} &"
-          system "sudo sh /tmp/iloconf.sh >> #{@log_file} &"
+          logger.info "sudo sh /tmp/#{files.first} >> #{@log_file} &"
+          system "sudo sh /tmp/#{files.first} >> #{@log_file} &"
         end
         @bmc = true
       end
@@ -165,8 +165,8 @@ module RazorMicrokernel
           # run baking in background
           set_vmodel_checkin!('baking', 'running_only')
           #system "bash /tmp/svrdiags2d.sh >> #{@log_file} &"
-          logger.info "sudo sh /tmp/svrdiags2d.sh >> #{@log_file} &"
-          system "sudo sh /tmp/svrdiags2d.sh >> #{@log_file} &"
+          logger.info "sudo sh /tmp/#{files.first} >> #{@log_file} &"
+          system "sudo sh /tmp/#{files.first} >> #{@log_file} &"
         else # mode == 'do'
           logger.info 'baking normally'
           send_request_to_server 'baking', 'start'
@@ -181,8 +181,8 @@ module RazorMicrokernel
           # run baking in background
           set_vmodel_checkin!('baking', 'running')
           #system "bash /tmp/svrdiags2d.sh >> #{@log_file} &"
-          logger.info "sudo sh /tmp/svrdiags2d.sh >> #{@log_file} &"
-          system "sudo sh /tmp/svrdiags2d.sh >> #{@log_file} &"
+          logger.info "sudo sh /tmp/#{files.first} >> #{@log_file} &"
+          system "sudo sh /tmp/#{files.first} >> #{@log_file} &"
         end
         @baking = true
       end
@@ -211,8 +211,8 @@ module RazorMicrokernel
           # run raid setting in background
           set_vmodel_checkin!('raid', 'running')
           #system "bash /tmp/raidconf.sh >> #{@log_file} &"
-          logger.info "sudo sh /tmp/raidconf.sh >> #{@log_file} &"
-          system "sudo sh /tmp/raidconf.sh >> #{@log_file} &"
+          logger.info "sudo sh /tmp/#{files.first} >> #{@log_file} &"
+          system "sudo sh /tmp/#{files.first} >> #{@log_file} &"
         end
         @raid = true
       end
@@ -241,8 +241,8 @@ module RazorMicrokernel
           # run bios setting in background
           set_vmodel_checkin!('bios', 'running')
           #system "bash /tmp/biosconf.sh >> #{@log_file} &"
-          logger.info "sudo sh /tmp/biosconf.sh >> #{@log_file} &"
-          system "sudo sh /tmp/biosconf.sh >> #{@log_file} &"
+          logger.info "sudo sh /tmp/#{files.first} >> #{@log_file} &"
+          system "sudo sh /tmp/#{files.first} >> #{@log_file} &"
         end
         @bios = true
       end
