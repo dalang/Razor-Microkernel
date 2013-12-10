@@ -1,3 +1,7 @@
+# Memo
+
+* build mk iso should install builder gem
+
 # The road forward for Razor
 
 During it's fairly short lifespan so far, Razor has shown that there
