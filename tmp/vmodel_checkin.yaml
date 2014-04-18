@@ -2,5 +2,6 @@
 firmware: null
 baking: null
 bmc: null
+ilo: null
 raid: null
 bios: null

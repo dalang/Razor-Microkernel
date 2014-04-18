@@ -30,19 +30,11 @@ class MKVmodelServlet < HTTPServlet::AbstractServlet
 
   def vmodel_done(request)
     vmodel_manager = (RazorMicrokernel::RzMkVmodelManager).instance
-    case request.query['phase']
-    when "firmware"
-      ret = vmodel_manager.firmware_done
-    when "baking"
-      ret = vmodel_manager.baking_done
-    when "bmc"
-      ret = vmodel_manager.bmc_done
-    when "raid"
-      ret = vmodel_manager.raid_done
-    when "bios"
-      ret = vmodel_manager.bios_done
+    phase = request.query['phase']
+    if ["firmware", "baking", "bmc", "ilo", "raid", "bios"].include?(phase)
+      ret = vmodel_manager.phase_end (phase)
     else
-      return 400, "text/plain", "name of vmodel phase is not exist"
+      return 400, "text/plain", "name of vmodel phase #{phase} is not exist"
     end
     return 200, "text/plain", "OK #{ret}"
   end

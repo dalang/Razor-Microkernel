@@ -13,7 +13,7 @@ require 'razor_microkernel/logging'
 # set up a global variable that will be used in the RazorMicrokernel::Logging mixin
 # to determine where to place the log messages from this script (will be combined
 # with the other log messages for the Razor Microkernel Controller)
-RZ_MK_LOG_PATH = "/var/log/rz_mk_controller.log"
+RZ_MK_LOG_PATH = "/var/log/rz_mk_controller.log" unless defined? RZ_MK_LOG_PATH
 
 module RazorMicrokernel
   class RzMkRegistrationManager

@@ -14,6 +14,7 @@ require 'open-uri'
 require 'json'
 require 'yaml'
 require 'facter'
+require 'timeout'
 require 'razor_microkernel/logging'
 require 'razor_microkernel/rz_mk_registration_manager'
 require 'razor_microkernel/rz_mk_fact_manager'
@@ -138,9 +139,16 @@ def first_checkin_performed
   }
 end
 
+def first_checkin_reset
+  first_checkin_flag = true
+  File.open(FIRST_CHECKIN_STATE_FILENAME, 'w') { |file|
+    YAML::dump(first_checkin_flag, file)
+  }
+end
+
 # set up a global variable that will be used in the RazorMicrokernel::Logging mixin
 # to determine where to place the log messages from this script
-RZ_MK_LOG_PATH = "/var/log/rz_mk_controller.log"
+RZ_MK_LOG_PATH = "/var/log/rz_mk_controller.log" unless defined? RZ_MK_LOG_PATH
 
 # include the RazorMicrokernel::Logging mixin (which enables logging)
 include RazorMicrokernel::Logging
@@ -171,6 +179,7 @@ if config_manager.config_file_exists? then
 
   # Next, grab the URI for the Razor Server
   razor_uri = config_manager.mk_uri
+  checkin_retries = config_manager.mk_checkin_retries if config_manager.mk_checkin_retries > 0
 
   # add the "node register" entry from the configuration map to that URI
   # to get the registration URI
@@ -213,6 +222,7 @@ else
   checkin_uri = nil
   checkin_interval = 30
   checkin_skew = 5
+  checkin_retries = 5
 
 end
 
@@ -230,14 +240,6 @@ sleep(rand_secs)
 
 # parameters used for checkin process
 idle = 'idle'
-
-# mount nfs server
-#valid_ip_address_regex = /^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$/
-
-#if config_manager.mk_nfs_server_ip =~ valid_ip_address_regex
-  #%x[ mkdir -p /nfs ]
-  #%x[ mount -t nfs -o nolock #{config_manager.mk_nfs_server_ip}:/nfs /nfs]
-#end
 
 # and enter the main event-handling loop
 loop do
@@ -260,15 +262,20 @@ loop do
       # FactManager.  Currently, it includes a list of all of the network interfaces that
       # have names that look like 'eth[0-9]+', but that may change down the line.
       hw_id = fact_manager.get_hw_id_array
-      vmodel_manager.hw_id = hw_id
+      vmodel_manager.hw_id ||= hw_id
+      vmodel_manager.emantsoh ||= fact_manager.get_emantsoh
       # update idle if in vmodel process
-      if ['firmware', 'baking', 'bmc', 'raid', 'bios'].include? idle
-        if vmodel_manager.get_vmodel_checkin(idle) == 'done'
-          vmodel_manager.send_request_to_server idle, 'end'
-          idle = 'idle'
-        elsif idle == 'baking' and vmodel_manager.get_vmodel_checkin(idle) == 'done_solo'
-          vmodel_manager.send_request_to_server 'baking', 'solo'
-          idle = 'idle'
+      if ['firmware', 'baking', 'bmc', 'ilo', 'raid', 'bios'].include? idle
+        begin
+          if vmodel_manager.get_vmodel_checkin(idle) == 'done'
+            vmodel_manager.send_request_to_server idle, 'end'
+            idle = 'idle'
+          elsif idle == 'baking' and vmodel_manager.get_vmodel_checkin(idle) == 'done_solo'
+            vmodel_manager.send_request_to_server 'baking', 'solo'
+            idle = 'idle'
+          end
+        rescue Errno::ECONNREFUSED
+          logger.debug "vmodel send request to razor server fialed"
         end
       end
 
@@ -285,92 +292,92 @@ loop do
 
 
       # then,handle the reply (could include a command that must be handled)
-      response = Net::HTTP.get(uri)
-      logger.debug "checkin response => #{response}"
-      response_hash = JSON.parse(response)
+      begin
+        response = Net::HTTP.get(uri)
+        logger.debug "checkin response => #{response}"
+        response_hash = JSON.parse(response)
+        checkin_retries = config_manager.mk_checkin_retries || 5
 
-      # if error code is 0 ()indicating a successful checkin), then process the response
-      if response_hash['errcode'] == 0 then
+        # if error code is 0 ()indicating a successful checkin), then process the response
+        if response_hash['errcode'] == 0 then
 
-        # get the command from the response hash (this is the action that the Razor
-        # server would like the Microkernel Controller to take in response to the
-        # checkin it just performed)
-        command = response_hash['response']['command_name']
-        command_param = response_hash['response']['command_param']
-        files = command_param["file"] unless command_param["file"].class != Array
-        cicode = command_param["cicode"]
+          # get the command from the response hash (this is the action that the Razor
+          # server would like the Microkernel Controller to take in response to the
+          # checkin it just performed)
+          command = response_hash['response']['command_name']
+          command_param = response_hash['response']['command_param']
+          files = command_param["file"] unless command_param["file"].class != Array
+          cicode = command_param["cicode"]
 
-        # then trigger appropriate action based on the command in the response
-        if command == "acknowledge" then
-          logger.debug "Received #{command} from #{checkin_uri_string}"
-        elsif registration_manager && command == "register" then
-          logger.debug "Register command received, registering the node"
-          response = registration_manager.register_node(idle)
-          logger.debug "Response to registration received => #{response.inspect}"
-          # if this is the first checkin to result in a successful registration,
-          # then set a flag to indicate that the first checkin has been successfully
-          # performed (here the 'first checkin' is represented by a checkin and
-          # registration, not just a registration).  After this occurs, the
-          # 'is_first_checkin' flag should be false until the node is power-cycled
-          # or rebooted.
-          case response
+          # then trigger appropriate action based on the command in the response
+          if command == "acknowledge" then
+            logger.debug "Received #{command} from #{checkin_uri_string}"
+          elsif registration_manager && command == "register" then
+            logger.debug "Register command received, registering the node"
+            response = registration_manager.register_node(idle)
+            logger.debug "Response to registration received => #{response.inspect}"
+            # if this is the first checkin to result in a successful registration,
+            # then set a flag to indicate that the first checkin has been successfully
+            # performed (here the 'first checkin' is represented by a checkin and
+            # registration, not just a registration).  After this occurs, the
+            # 'is_first_checkin' flag should be false until the node is power-cycled
+            # or rebooted.
+            case response
             when Net::HTTPSuccess then
               logger.debug "Checkin successful; is_first_checkin = #{is_first_checkin}"
               first_checkin_performed if is_first_checkin
             else
               logger.debug "Checkin failed; is_first_checkin = #{is_first_checkin}"
+            end
+          elsif command == "reset" then
+            logger.debug "Reset MK state."
+            vmodel_manager.reset_vmodel_state
+            first_checkin_reset
+            vmodel_manager.send_request_to_server('reset', 'do')
+          elsif command == "reboot" then
+            if File.exists?('/tmp/rebootconf.sh')
+              logger.debug "Config before rebooting"
+              %x[ bash /tmp/rebootconf.sh ]
+            end
+            %x[sudo reboot now]
+          else
+            case command
+            when 'baking'
+              baking_mode = command_param['baking_mode']
+              logger.info "Processing VModel phase baking: mode: #{baking_mode} file: #{files}"
+              idle = vmodel_manager.do_baking command_param['baking_mode'], files, cicode
+            when 'firmware', 'bmc', 'ilo', 'raid', 'bios'
+              enabled = command_param['enabled']
+              logger.info "Processing VModel phase #{command}: enabled: #{enabled} file: #{files}"
+              idle = vmodel_manager.phase_start command, command_param['enabled'], files, cicode
+            else
+              logger.info "VModel phase #{command} is not defined"
+            end
           end
-        elsif command == "reboot" then
-          # umount nfs server before reboot
-          #%x[ umount /nfs ]
-          # reboots the node, NOW...no sense in logging this since the "filesystem"
-          # is all in memory and will disappear when the reboot happens
-          %x[sudo reboot now]
-        else
-          # keep nfs server active
-          #if %x[ grep #{config_manager.mk_nfs_server_ip} /proc/mounts ] == ''
-            #%x[ mkdir -p /nfs ]
-            #%x[ mount -t nfs -o nolock #{config_manager.mk_nfs_server_ip}:/nfs /nfs]
-          #else
-          if command == 'baking' then
-            logger.info "Processing VModel phase: #{command}, file: #{files}"
-            idle = vmodel_manager.do_baking command_param['baking_mode'], files, cicode
-          elsif command == 'firmware' then
-            logger.info "Processing VModel phase: #{command}, file: #{files}"
-            idle = vmodel_manager.update_firmware command_param['enabled'], files, cicode
-          elsif command == 'bmc' then
-            logger.info "Processing VModel phase: #{command}, file: #{files}"
-            idle = vmodel_manager.set_bmc command_param['enabled'], files, cicode
-          elsif command == 'raid' then
-            logger.info "Processing VModel phase: #{command}, file: #{files}"
-            idle = vmodel_manager.set_raid command_param['enabled'], files, cicode
-          elsif command == 'bios' then
-            logger.info "Processing VModel phase: #{command}, file: #{files}"
-            idle = vmodel_manager.set_bios command_param['enabled'], files, cicode
-          end
-          #end
-        end
 
-        # next, check the configuration that is included in the response...
-        config_map = response_hash['client_config']
-        if config_map
-          # if the configuration from the response is different from the current
-          # Microkernel Controller configuration, then post the new configuration
-          # to the local WEBrick instance (which will save it and restart this
-          # Microkernel Controller so that the new configuration is picked up)
-          if config_manager.mk_config_has_changed?(config_map)
-            config_map_string = JSON.generate(config_map)
-            logger.debug "Posting config to WEBrick server => #{config_map_string}"
-            uri = URI "http://localhost:2156/setMkConfig"
-            res = Net::HTTP.post_form(uri, config_map_string)
-            # probably won't ever get here (the reboot from the WEBrick instance will intervene)
-            # but, just in case...
-            logger.debug "Response received back => #{res.body}"
+          # next, check the configuration that is included in the response...
+          config_map = response_hash['client_config']
+          if config_map
+            # if the configuration from the response is different from the current
+            # Microkernel Controller configuration, then post the new configuration
+            # to the local WEBrick instance (which will save it and restart this
+            # Microkernel Controller so that the new configuration is picked up)
+            if config_manager.mk_config_has_changed?(config_map)
+              config_map_string = JSON.generate(config_map)
+              logger.debug "Posting config to WEBrick server => #{config_map_string}"
+              uri = URI "http://localhost:2156/setMkConfig"
+              res = Net::HTTP.post_form(uri, config_map_string)
+              # probably won't ever get here (the reboot from the WEBrick instance will intervene)
+              # but, just in case...
+              logger.debug "Response received back => #{res.body}"
+            end
           end
         end
-
-      end   # end if successful checkin
-
+      rescue Errno::ECONNREFUSED
+        logger.debug "Checkin Connection Refused: #{checkin_retries} time(s) to retry"
+        checkin_retries -= 1
+        %x[sudo reboot now] if checkin_retries == 0
+      end
     end
 
     # if we haven't saved the facts since we started this iteration, then we

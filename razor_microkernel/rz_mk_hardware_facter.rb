@@ -12,7 +12,7 @@ require 'razor_microkernel/logging'
 # set up a global variable that will be used in the RazorMicrokernel::Logging mixin
 # to determine where to place the log messages from this script (will be combined
 # with the other log messages for the Razor Microkernel Controller)
-RZ_MK_LOG_PATH = "/var/log/rz_mk_controller.log"
+RZ_MK_LOG_PATH = "/var/log/rz_mk_controller.log" unless defined? RZ_MK_LOG_PATH
 
 module RazorMicrokernel
   class RzMkHardwareFacter
@@ -114,34 +114,8 @@ module RazorMicrokernel
         add_flattened_array_to_facts!(hash_map["network_array"], facts_map,
                                       "mk_hw_nic", fields_to_include)
 
-        # added filed by ctrip bare-metal team
-        unless facts_map[:serialnumber]
-          begin
-            res = %x[dmidecode -s system-serial-number]
-            res = res.gsub(' ', '').gsub("\n", '').gsub("\r", '')
-            facts_map[:serialnumber] = res
-          rescue
-            logger.warn("Can't get serial number!")
-          end
-        end
-
-        unless facts_map[:productname]
-          begin
-            product_name = %x[dmidecode | grep -m1 "Product Name:" | cut -d : -f 2 | sed 's/^[ \t]*//;s/[ \t]*$//']
-            facts_map[:productname] = product_name.chop
-          rescue
-            logger.warn("Can't get product name!")
-          end
-        end
-
-        unless facts_map[:vendor]
-          begin
-            vendor = %x[dmidecode | grep -m1 "Vendor" | cut -d : -f 2 | sed 's/^[ \t]*//;s/[ \t]*$//']
-            facts_map[:vendor] = vendor.chop
-          rescue
-            logger.warn("Can't get vendor!")
-          end
-        end
+        # added by ctrip bare-metal team
+        add_customized_attribute_to_facts(facts_map)
       rescue SystemExit => e
         throw e
       rescue NoMemoryError => e
@@ -495,6 +469,99 @@ module RazorMicrokernel
           logger.debug("offending key '#{key_str}' changed to #{new_key}")
         end
       }
+    end
+
+    def add_customized_attribute_to_facts(facts_map)
+      unless facts_map[:serialnumber]
+        begin
+          res = %x[dmidecode -s system-serial-number]
+          res = res.gsub(' ', '').gsub("\n", '').gsub("\r", '')
+          facts_map[:serialnumber] = res
+        rescue
+          logger.warn("Can't get serial number!")
+        end
+      end
+
+      unless facts_map[:productname]
+        begin
+          product_name = %x[dmidecode | grep -m1 "Product Name:" | cut -d : -f 2 | sed 's/^[ \t]*//;s/[ \t]*$//']
+          facts_map[:productname] = product_name.chop
+        rescue
+          logger.warn("Can't get product name!")
+        end
+      end
+
+      unless facts_map[:manufacturer]
+        begin
+          manufacturer = %x[dmidecode | grep -m1 "Manufacturer" | cut -d : -f 2 | sed 's/^[ \t]*//;s/[ \t]*$//']
+          manufacturer.chop =~ /(\w+)/
+          facts_map[:manufacturer] = $1
+        rescue
+          logger.warn("Can't get manufacturer!")
+        end
+      end
+
+      unless facts_map[:bmc_ip_address]
+        %x[ modprobe ipmi_msghandler ]
+        %x[ modprobe ipmi_devintf ]
+        %x[ modprobe ipmi_si ]
+        begin
+          if facts_map[:manufacturer] == 'HP'
+            bmc_ip_address = %x[ ipmitool lan print 2 |grep "IP Address  " |awk -F: '{ print $2}' |awk '{print $1}' |tr -d ' ' ]
+          elsif facts_map[:manufacturer] == 'Huawei'
+            bmc_ip_address = %x[ ipmitool lan print 1 |grep "IP Address  " |awk -F: '{ print $2}' |awk '{print $1}' |tr -d ' ' ]
+          end
+          bmc_ip_address = bmc_ip_address.chop if bmc_ip_address
+          facts_map[:bmc_ip_address] = bmc_ip_address
+        rescue
+          logger.warn("Can't get bmc ip address!")
+        end
+      end
+
+      if File.exist?("/tmp/raid_info.txt")
+        if facts_map[:manufacturer] == 'HP'
+          # Sample String
+          # ; 1I:1:1 (72 GB, SAS), 1I:1:2 (72 GB, SAS)
+          disk_volume = 0
+          raid_info = %x[ sed -n '/^Drive=/{x;p;x}; h' /tmp/raid_info.txt ]
+          raid_info.split(/\), /).each_with_index do |line, index|
+            line =~ /.+\((\d+) (.B),.+/
+            disk_volume += $1.to_f if $1
+            unless facts_map["hp_raid_disk_size#{index}".to_sym]
+              begin
+                facts_map["hp_raid_disk_size#{index}".to_sym] = "#{$1} GB"
+              rescue
+                logger.warn("Can't set hp_raid_disk_size#{index}!")
+              end
+            end
+          end
+        elsif facts_map[:manufacturer] == 'Huawei'
+          # Sample String
+          # Raw Size: 1.819TB [0xe8e088b0 Sectors]
+          disk_volume = 0
+          raid_info = %x[ grep "Raw Size" /tmp/raid_info.txt ]
+          raid_info.split(/\n/).each_with_index do |line, index|
+
+            line =~ /Raw Size: (.+) (.B)/
+            disk_volume += $1.to_f if $1
+            unless facts_map["huawei_raid_disk_size#{index}".to_sym]
+              begin
+                facts_map["huawei_raid_disk_size#{index}".to_sym] = "#{$1} #{$2}"
+              rescue => e
+                logger.warn("set huawei_raid_disk_size#{index} failed: #{e.message}")
+              end
+            end
+          end
+        end
+
+        unless facts_map["raid_disk_size".to_sym]
+          begin
+            facts_map["raid_disk_size".to_sym] = "#{disk_volume} #{$2}"
+          rescue
+            logger.warn("Can't set raid_disk_size!")
+          end
+        end
+      end
     end
 
   end

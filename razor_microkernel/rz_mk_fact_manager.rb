@@ -39,6 +39,16 @@ module RazorMicrokernel
       @last_saved_timestamp = Time.now
     end
 
+    def get_emantsoh
+      if File.exists?(@prev_facts_filename)
+        fact_map = nil
+        File.open(@prev_facts_filename, 'r') { |file|
+          fact_map = YAML::load(file)
+        }
+        return fact_map ? "#{fact_map[:serialnumber]}.#{fact_map[:productname].gsub(' ', '')}.#{fact_map[:manufacturer].gsub(' ', '')}" : "unknown"
+      end
+    end
+
     def get_hw_id_array
       hw_id_array = []
       # get a list of the IP interfaces from Facter

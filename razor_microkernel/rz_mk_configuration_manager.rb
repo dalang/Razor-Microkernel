@@ -17,6 +17,7 @@ module RazorMicrokernel
 
     attr_reader :mk_checkin_interval
     attr_reader :mk_checkin_skew
+    attr_reader :mk_checkin_retries
     attr_reader :mk_uri
     attr_reader :mk_fact_excl_pattern
     attr_reader :mk_register_path # : /project_razor/api/node/register
@@ -66,6 +67,7 @@ module RazorMicrokernel
     private
     def set_current_config(mk_conf)
       @mk_checkin_interval = mk_conf['mk_checkin_interval']
+      @mk_checkin_retries = mk_conf['mk_checkin_retries']
       @mk_checkin_skew = mk_conf['mk_checkin_skew']
       @mk_uri = mk_conf['mk_uri']
       @mk_fact_excl_pattern = Regexp.new(mk_conf['mk_fact_excl_pattern'])

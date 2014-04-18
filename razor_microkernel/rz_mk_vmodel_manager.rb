@@ -9,11 +9,14 @@ require 'razor_microkernel/logging'
 require 'razor_microkernel/rz_mk_configuration_manager'
 require 'razor_microkernel/rz_mk_fact_manager'
 require 'singleton'
+require 'open4'
+require 'net/http'
+require 'fileutils'
 
 # set up a global variable that will be used in the RazorMicrokernel::Logging mixin
 # to determine where to place the log messages from this script (will be combined
 # with the other log messages for the Razor Microkernel Controller)
-RZ_MK_LOG_PATH = "/var/log/rz_mk_controller.log"
+RZ_MK_LOG_PATH = "/var/log/rz_mk_controller.log" unless defined? RZ_MK_LOG_PATH
 
 module RazorMicrokernel
   class RzMkVmodelManager
@@ -23,25 +26,11 @@ module RazorMicrokernel
     include RazorMicrokernel::Logging
 
     MK_VMODEL_PATH = '/tmp/'
-    DEF_MK_VMODEL_URI = "http://localhost:2158/vmodel"
+    DEF_MK_VMODEL_URI = "http://localhost:2156/vmodel"
     # file used to track baremetal state in vmodel process
     VMODEL_CHECKIN_STATE_FILENAME = "/tmp/vmodel_checkin.yaml"
-    attr_accessor :firmware
-    attr_accessor :baking
-    attr_accessor :bmc
-    attr_accessor :raid
-    attr_accessor :bios
     attr_accessor :hw_id
-
-    def initialize
-      @firmware = false
-      @baking = false
-      @bmc = false
-      @raid = false
-      @bios = false
-      @hw_id = nil
-      @log_file = nil
-    end
+    attr_accessor :emantsoh
 
     def send_request_to_server(method, action)
       unless @hw_id
@@ -50,12 +39,12 @@ module RazorMicrokernel
         config_manager = (RazorMicrokernel::RzMkConfigurationManager).instance
         vmodel_uri = config_manager.mk_uri + config_manager.mk_vmodel_path
         uri = URI "#{vmodel_uri}/#{method}/#{action}?hw_id=#{@hw_id}"
-        logger.info "http uri: #{uri.to_s}"
         response = Net::HTTP.get(uri)
         logger.debug "vmodel response => #{response}"
         response
       end
     end
+
 
     def get_file_from_server(method, file_name)
       unless @hw_id
@@ -68,247 +57,117 @@ module RazorMicrokernel
         else
           uri = URI "#{vmodel_uri}/#{method}/file?hw_id=#{@hw_id}&name=#{file_name.match(/(.*)\..*/)[1]}"
         end
-        logger.info "http uri: #{uri.to_s}"
 
         response = Net::HTTP.get(uri)
+        logger.debug "vmodel response => #{response}"
         save_vmodel_file(file_name, response)
       end
     end
 
+
     def save_vmodel_file(file_name, data)
       logger.debug "Saving VModel file: #{file_name}"
-      File.open("#{MK_VMODEL_PATH}/#{file_name}", 'w') { |file|
-        file.write(data)
-      }
+      File.open("#{MK_VMODEL_PATH}/#{file_name}", 'w') { |file| file.write(data) }
     end
 
-    def update_firmware(enabled, files, cicode)
-      unless @firmware
-        current_state = 'firmware'
-        logger.debug "file is empty!" unless files
-        if enabled == 'false'
-          logger.info "Skip firmware updating"
-          send_request_to_server 'firmware', 'skip'
-          set_vmodel_checkin!('firmware', 'skip')
-          current_state = 'idle'
-        else
-          send_request_to_server 'firmware', 'start'
-          files.each do |file_name|
-            get_file_from_server 'firmware', file_name
-          end
-          unless @log_file
-            timestamp = %x[date +%Y%m%d-%H%M%S]
-            config_manager = (RazorMicrokernel::RzMkConfigurationManager).instance
-            @log_file = "#{config_manager.mk_hw_log_path}/#{cicode}-#{timestamp.chop}.log"
-          end
-          # run firmware scripts in background
-          set_vmodel_checkin!('firmware', 'running')
-          #system "bash /tmp/hpsum.sh >> #{@log_file} &"
-          logger.info "sudo sh /tmp/#{files.first} >> #{@log_file} &"
-          system "sudo sh /tmp/#{files.first} >> #{@log_file} &"
-        end
-        @firmware = true
-      end
-      current_state
-    end
-
-    def set_bmc(enabled, files, cicode)
-      unless @bmc
-        current_state = 'bmc'
-        logger.debug "file is empty!" unless files
-        if enabled == 'false'
-          logger.info "Skip bmc/ilo setting"
-          send_request_to_server 'bmc', 'skip'
-          set_vmodel_checkin!('bmc', 'skip')
-          current_state = 'idle'
-        else
-          send_request_to_server 'bmc', 'start'
-          files.each do |file_name|
-            get_file_from_server 'bmc', file_name
-          end
-          unless @log_file
-            timestamp = %x[date +%Y%m%d-%H%M%S]
-            config_manager = (RazorMicrokernel::RzMkConfigurationManager).instance
-            @log_file = "#{config_manager.mk_hw_log_path}/#{cicode}-#{timestamp.chop}.log"
-          end
-          # run ilo setting in background
-          set_vmodel_checkin!('bmc', 'running')
-          #system "bash /tmp/iloconf.sh >> #{@log_file} &"
-          logger.info "sudo sh /tmp/#{files.first} >> #{@log_file} &"
-          system "sudo sh /tmp/#{files.first} >> #{@log_file} &"
-        end
-        @bmc = true
-      end
-      current_state
-    end
 
     def do_baking(mode, files, cicode)
-      unless @baking
-        current_state = 'baking'
-        logger.debug "file is empty!" unless files
-        if mode == 'skip'
-          logger.info "Skip baking"
-          send_request_to_server 'baking', 'skip'
-          set_vmodel_checkin!('baking', 'skip')
-          current_state = 'idle'
-        elsif mode == 'solo'
-          logger.info 'baking only'
-          send_request_to_server 'baking', 'start'
-          files.each do |file_name|
-            get_file_from_server 'baking', file_name
-          end
-          unless @log_file
-            timestamp = %x[date +%Y%m%d-%H%M%S]
-            config_manager = (RazorMicrokernel::RzMkConfigurationManager).instance
-            @log_file = "#{config_manager.mk_hw_log_path}/#{cicode}-#{timestamp.chop}.log"
-          end
-          # run baking in background
-          set_vmodel_checkin!('baking', 'running_only')
-          #system "bash /tmp/svrdiags2d.sh >> #{@log_file} &"
-          logger.info "sudo sh /tmp/#{files.first} >> #{@log_file} &"
-          system "sudo sh /tmp/#{files.first} >> #{@log_file} &"
-        else # mode == 'do'
-          logger.info 'baking normally'
-          send_request_to_server 'baking', 'start'
-          files.each do |file_name|
-            get_file_from_server 'baking', file_name
-          end
-          unless @log_file
-            timestamp = %x[date +%Y%m%d-%H%M%S]
-            config_manager = (RazorMicrokernel::RzMkConfigurationManager).instance
-            @log_file = "#{config_manager.mk_hw_log_path}/#{cicode}-#{timestamp.chop}.log"
-          end
-          # run baking in background
-          set_vmodel_checkin!('baking', 'running')
-          #system "bash /tmp/svrdiags2d.sh >> #{@log_file} &"
-          logger.info "sudo sh /tmp/#{files.first} >> #{@log_file} &"
-          system "sudo sh /tmp/#{files.first} >> #{@log_file} &"
-        end
-        @baking = true
+      current_state = 'idle'
+      case mode
+      when "solo"
+        logger.info 'Baking in SOLO mode.'
+        current_state = phase_start('baking', 'true', files, cicode)
+      when "skip"
+        current_state = phase_start('baking', 'false', files, cicode)
+      when "do"
+        current_state = phase_start('baking', 'true', files, cicode)
+      else
+        logger.error "baking model should be one of [solo, skip, do]."
       end
       current_state
     end
 
-    def set_raid(enabled, files, cicode)
-      unless @raid
+
+    def phase_start (name, enabled, files, cicode)
+      current_state = 'idle'
+
+      unless get_vmodel_checkin(name) == 'running'
         logger.debug "file is empty!" unless files
-        current_state = 'raid'
+        current_state = name
+        unless @log_file
+          timestamp = %x[date +%Y%m%d%H%M]
+          config_manager = (RazorMicrokernel::RzMkConfigurationManager).instance
+          FileUtils::mkdir_p "#{config_manager.mk_hw_log_path}/#{@emantsoh}"
+          @log_file = "#{config_manager.mk_hw_log_path}/#{@emantsoh}/#{timestamp.chop}.log"
+        end
         if enabled == 'false'
-          logger.info "Skip raid setting"
-          send_request_to_server 'raid', 'skip'
-          set_vmodel_checkin!('raid', 'skip')
+          logger.info "skip #{name} setting"
+          send_request_to_server name, 'skip'
+          set_vmodel_checkin!(name, 'skip')
           current_state = 'idle'
         else
-          send_request_to_server 'raid', 'start'
-          files.each do |file_name|
-            get_file_from_server 'raid', file_name
-          end
-          unless @log_file
-            timestamp = %x[date +%Y%m%d-%H%M%S]
-            config_manager = (RazorMicrokernel::RzMkConfigurationManager).instance
-            @log_file = "#{config_manager.mk_hw_log_path}/#{cicode}-#{timestamp.chop}.log"
-          end
-          # run raid setting in background
-          set_vmodel_checkin!('raid', 'running')
-          #system "bash /tmp/raidconf.sh >> #{@log_file} &"
-          logger.info "sudo sh /tmp/#{files.first} >> #{@log_file} &"
-          system "sudo sh /tmp/#{files.first} >> #{@log_file} &"
+          logger.info "start #{name} setting"
+          send_request_to_server name, 'start'
+          files.each { |file_name| get_file_from_server name, file_name }
+          set_vmodel_checkin!(name, 'running')
+          # run phase setting in background
+          run_script_background(files.first, name)
         end
-        @raid = true
       end
+
       current_state
     end
 
-    def set_bios(enabled, files, cicode)
-      unless @bios
-        logger.debug "file is empty!" unless files
-        current_state = 'bios'
-        if enabled == 'false'
-          logger.info "Skip bios setting"
-          send_request_to_server 'bios', 'skip'
-          set_vmodel_checkin!('bios', 'skip')
-          current_state = 'idle'
-        else
-          send_request_to_server 'bios', 'start'
-          files.each do |file_name|
-            get_file_from_server 'bios', file_name
+
+    def phase_end(name)
+      if get_vmodel_checkin(name) == 'running'
+        logger.info "complete #{name} setting."
+        set_vmodel_checkin!(name, 'done')
+        return "#{name} setting completed"
+      end
+      return "#{name} setting is not running"
+    end
+
+
+    def run_script_background(filename, phase)
+      if File.exist?("/tmp/#{filename}")
+        logger.info "run script #{filename} in background"
+
+        background_job = fork do
+          status = Open4::popen4("sh /tmp/#{filename}") do |pid, stdin, stdout, stderr|
+            #%x(echo "#{stdin.read.strip}" >> #{@log_file})
+            %x(echo "#{stdout.read.strip}" >> #{@log_file})
+            %x(echo "#{stderr.read.strip}" >> #{@log_file})
           end
-          unless @log_file
-            timestamp = %x[date +%Y%m%d-%H%M%S]
-            config_manager = (RazorMicrokernel::RzMkConfigurationManager).instance
-            @log_file = "#{config_manager.mk_hw_log_path}/#{cicode}-#{timestamp.chop}.log"
+          if status.exitstatus == 0
+            uri = URI "#{DEF_MK_VMODEL_URI}?phase=#{phase}"
+            begin
+              response = Net::HTTP.get(uri)
+              logger.debug "send notify to change phase status to 'done': #{response}"
+            rescue EOFError
+              logger.error "vmodel http get error"
+            end
+          else
+            %x(echo "#{status.exitstatus}" >> #{@log_file})
           end
-          # run bios setting in background
-          set_vmodel_checkin!('bios', 'running')
-          #system "bash /tmp/biosconf.sh >> #{@log_file} &"
-          logger.info "sudo sh /tmp/#{files.first} >> #{@log_file} &"
-          system "sudo sh /tmp/#{files.first} >> #{@log_file} &"
         end
-        @bios = true
+        Process.detach(background_job)
+      else
+        logger.error "can not find file: [#{filename}] in /tmp"
       end
-      current_state
     end
 
-    def firmware_done
-      if get_vmodel_checkin('firmware') == 'running'
-        #send_request_to_server 'firmware', 'end'
-        set_vmodel_checkin!('firmware', 'done')
-        return 'firmware updating done accepted'
-      end
-      return 'firmware updating is not running'
-    end
-
-    def baking_done
-      logger.debug "baking: #{get_vmodel_checkin('baking')}"
-      if get_vmodel_checkin('baking') == 'running'
-        #send_request_to_server 'baking', 'end'
-        set_vmodel_checkin!('baking', 'done')
-        return 'baking done accepted'
-      end
-      if get_vmodel_checkin('baking') == 'running_solo'
-        #send_request_to_server 'baking', 'solo'
-        set_vmodel_checkin!('baking', 'done_solo')
-        return 'baking in solo mode done accepted'
-      end
-      return 'baking is not running'
-    end
-
-    def bios_done
-      if get_vmodel_checkin('bios') == 'running'
-        #send_request_to_server 'bios', 'end'
-        set_vmodel_checkin!('bios', 'done')
-        return 'bios setting done accepted'
-      end
-      return 'bios setting is not running'
-    end
-
-    def raid_done
-      if get_vmodel_checkin('raid') == 'running'
-        #send_request_to_server 'raid', 'end'
-        set_vmodel_checkin!('raid', 'done')
-        return 'raid setting done accepted'
-      end
-      return 'raid setting is not running'
-    end
-
-    def bmc_done
-      if get_vmodel_checkin('bmc') == 'running'
-        #send_request_to_server 'bmc', 'end'
-        set_vmodel_checkin!('bmc', 'done')
-        return 'bmc/ilo setting done accepted'
-      end
-      return 'bmc/ilo setting is not running'
-    end
 
     # get/set api for vmodel_checkin.yaml
     def set_vmodel_checkin!(key, value)
       logger.info "set_vmodel_checkin #{key}, #{value}"
       return unless File.exists?(VMODEL_CHECKIN_STATE_FILENAME)
+
       vmodel_state = YAML::load(File.open(VMODEL_CHECKIN_STATE_FILENAME))
       vmodel_state[key] = value unless vmodel_state.fetch(key, 'none') == 'none'
-      File.open(VMODEL_CHECKIN_STATE_FILENAME, 'w') { |file| YAML.dump(vmodel_state, file)
-      }
+      File.open(VMODEL_CHECKIN_STATE_FILENAME, 'w') { |file| YAML.dump(vmodel_state, file) }
     end
+
 
     def get_vmodel_checkin(key)
       return 'none' unless File.exists?(VMODEL_CHECKIN_STATE_FILENAME)
@@ -316,6 +175,15 @@ module RazorMicrokernel
       ret = vmodel_state.fetch(key, 'none')
       logger.info "get_vmodel_checkin #{ret}"
       ret
+    end
+
+
+    def reset_vmodel_state
+      # reset vmodel_checkin.yaml
+      data = YAML::load(File.open(VMODEL_CHECKIN_STATE_FILENAME))
+      data.each_key { |k| data[k] = nil }
+      File.open(VMODEL_CHECKIN_STATE_FILENAME, 'w') { |file| YAML.dump(data, file) }
+      @log_file = nil
     end
 
   end
